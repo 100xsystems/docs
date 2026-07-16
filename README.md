@@ -9,7 +9,7 @@ Welcome to the official documentation for [100xSystems](https://github.com/100xs
 | [OVERVIEW.md](OVERVIEW.md) | Complete project overview and architecture |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 | [ROADMAP.md](ROADMAP.md) | Future plans and priorities |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture documentation |
+| [ARCHITECTURE_PROPOSAL.md](ARCHITECTURE_PROPOSAL.md) | System architecture documentation |
 | [CLI_REFERENCE.md](CLI_REFERENCE.md) | Full CLI command reference |
 | [TEST_RUNNER_ARCHITECTURE.md](TEST_RUNNER_ARCHITECTURE.md) | Test suite and validation system |
 
