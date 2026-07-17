@@ -1,266 +1,312 @@
-# 100xSystems — What's Next: Features, Ideas & Possibilities
+# 100xSystems — Project Status & What's Next
 
-> **Built on:** Executor plugin system + Lesson-based curriculum + PR-based review
-> **Constraint:** All features must work without a traditional backend (GitHub is the backend)
-
----
-
-## P0 — CRITICAL (Foundation Gaps)
-
-### 1. GitHub PR Submission Automation
-
-**The single most impactful missing feature.** Everything else builds on this.
-
-**What:** `100x submit` should fork `100xsystems/submissions`, clone it, copy the review package, commit, push, and create a PR via Octokit.
-
-**Why it's P0:** Without this, the entire review workflow is theoretical. Users must manually create PRs. This is the bottleneck blocking all community engagement.
-
-**Implementation:**
-```
-cli/src/actions/submit-pr.ts   ← NEW (Octokit-based)
-cli/src/actions/submit.ts      ← UPDATE (call submit-pr)
-```
-
-**Dependencies:** `npm install @octokit/action` (already have GitHub auth)
-
-### 2. Quiz Reader — Lesson Directory Scanning
-
-**What:** The `quiz-reader.ts` only looks in `quizzes/` folder. Update it to also scan lesson directories for `quiz.md` files.
-
-**Why:** Quizzes are now embedded in lesson modules. The `100x quiz` command can't find them.
-
-**Implementation:** Add `findQuizzesInLessons()` to `quiz-reader.ts`
-
-### 3. System Detail Page — Track/Module/Lesson Navigation
-
-**What:** The system detail page (`/systems/[slug]`) still shows old `folderTag` structure. Systems with tracks should show track → module → lesson hierarchy instead.
-
-**Implementation:** Update `SystemDetailClient.tsx` to call `getSystemTracks()` when `systemHasTracks()` returns true.
+> **Last updated:** July 2026
+> **Author:** AI-assisted project audit
 
 ---
 
-## P1 — HIGH VALUE (Community + Engagement)
+## Table of Contents
 
-### 4. Community Submissions Gallery Page
-
-**What:** A `/community` page showing verified implementations. Read from GitHub API (`100xsystems/submissions`) at build time.
-
-**Why:** Social proof drives engagement. Seeing other people's implementations motivates learners.
-
-**Implementation:**
-- Fetch submissions directory via GitHub API during build
-- Group by system, show author, language, PR link
-- Use Incremental Static Regeneration (ISR) to stay fresh
-- One GitHub API call per build (zipped repo fetch)
-
-**Data shown:**
-```
-Microservices
-  ✓ @aryan — TypeScript — PR #42
-  ✓ @alice — Spring Boot — PR #38
-  Reviewers: @sarah, @bob
-```
-
-### 5. Reviewer Leaderboard (from GitHub data)
-
-**What:** Show top reviewers based on PR reviews in `100xsystems/submissions`.
-
-**Why:** Gamification for reviewers. People contribute more when their work is visible.
-
-**Implementation:** GitHub API can return PR review counts. Aggregate at build time.
-
-### 6. VS Code Extension — Phase 1: Foundation
-
-**What:** A VS Code extension that wraps the CLI into a graphical experience inside the editor. Sidebar with system/module/lesson tree, button-based commands, GitHub auth integration.
-
-**Why:** Developers spend 8+ hours/day in VS Code. Every context switch to a browser or terminal costs ~15 minutes of focus recovery. The extension removes this friction entirely. See `docs/VSCE_EXTENSION_AUDIT.md` for the complete analysis.
-
-**Implementation:**
-- CLI Bridge module (`child_process.spawn` calling `100x` commands with `--json` output)
-- `TreeDataProvider` sidebar showing systems → tracks → modules → lessons with progress
-- 4 commands: Validate, Init, Doctor, Show Next Lesson
-- VS Code native GitHub auth (`authentication.getSession('github')`) synced to CLI's `~/.100x/auth.json`
-- ~1000 lines, 1-2 weeks, 1 developer
-
-**Why P1:** Highest ROI per line of code. Ambient sidebar presence drives retention better than any other feature. No competitor has a good VS Code learning extension — first-mover opportunity.
-
-**Why not P0:** Phase 1 works independently of P0 features (sidebar, validate, doctor, init all work without PR automation or quiz scanning). The Submit button comes in Phase 3, which DOES depend on P0's PR automation.
-
-**⚠️ Prerequisite:** Before Phase 1 can start, CLI commands need `--json` output flags. The CLI is built with Pastel/Ink (React terminal rendering) and currently outputs only ANSI text. Adding machine-readable `--json` output requires refactoring each command to separate data from presentation. Estimated: 8-10 days for the 5 commands needed by Phase 1. See `docs/VSCE_EXTENSION_AUDIT.md` Section 3.2 for details.
-
-### 7. Knowledge Base — "Related" Section on Reading Pages
-
-**What:** When reading a lesson, show linked knowledge base entries in a sidebar section.
-
-**Why:** Lessons already have `knowledge_refs` in frontmatter. The website doesn't display them.
-
-**Implementation:** Read `knowledge_refs` from lesson frontmatter, fetch KB items, render as links in sidebar.
+1. [What's Been Built](#1-whats-been-built)
+2. [Architecture Overview](#2-architecture-overview)
+3. [Website Audit](#3-website-audit)
+4. [What's Next — Roadmap](#4-whats-next--roadmap)
+5. [Known Issues](#5-known-issues)
+6. [How to Contribute](#6-how-to-contribute)
 
 ---
 
-## P2 — PRODUCT-MARKET FIT (Growth + Retention)
+## 1. What's Been Built
 
-### 8. CLI Command: `100x review` — AI-Powered Review
+### 1.1 CLI (`@100xsystems/cli`)
 
-**What:** Run an LLM evaluation of the user's implementation against the system specification.
+The core learning tool. A terminal-based curriculum interface built with Ink + Pastel.
 
-**Why:** Instant feedback before human review. The architecture doc describes this as a signature feature.
+| Feature | Status | Details |
+|---------|--------|---------|
+| `100xsystems init` | ✅ Done | Scaffolds new projects. Interactive wizard + direct mode. Supports TypeScript and Java tracks. |
+| `100xsystems validate` | ✅ Done | 3-level validation: L1 (structure), L2 (behavioral tests), L3 (spec checks). |
+| `100xsystems submit` | ✅ Done | Creates GitHub PR with review package. |
+| `100xsystems list` | ✅ Done | Lists available systems from registry. |
+| `100xsystems doctor` | ✅ Done | Checks dev environment (Node, Git, Docker, Maven). |
+| `100xsystems progress` | ✅ Done | Tracks per-lesson progress locally. |
+| `100xsystems contribute` | ✅ Done | Scaffolds curriculum content (systems, tracks, lessons). |
+| `100xsystems login` / `logout` | ✅ Done | GitHub OAuth via PKCE. |
+| `100xsystems update` | ✅ Done | Checks for CLI updates. |
 
-**Implementation:**
-```yaml
-# In lesson frontmatter
-review_criteria:
-  - category: "Architecture"
-    questions:
-      - "Are service boundaries well-defined?"
-      - "Is there a clear separation of concerns?"
+### 1.2 CLI Key Architectural Decisions
+
+- **Test-runner executor** — Runs real behavioral tests (vitest for TS, JUnit for Java) in isolated temp directories
+- **Registry-based system discovery** — Fetches `registry.json` from `100xsystems/registry` repo, shallow-clones system repos to `~/.cache/100xsystems/repos/`
+- **3-level validation** — L1: project structure/file existence. L2: lesson behavioral tests. L3: spec-defined checks
+- **Auto-detect `expected_passes`** — Parses test files for `it()`/`test()` calls (TS) or `@Test` annotations (Java)
+- **npm dependency caching** — Warm `node_modules` cache at `~/.cache/100xsystems/test-node-modules/`
+- **Temp dir registry** — Tracks temp dirs in `~/.cache/100xsystems/test-tmp-dirs.json`, cleans stale entries >1hr
+- **Frontmatter validation** — Validates lesson frontmatter for required keys, known validator types, duplicate keys, malformed YAML
+
+### 1.3 Test Suite Packages
+
+| Package | Status | Description |
+|---------|--------|-------------|
+| `@100xsystems/test-suite-typescript` | ✅ Published (npm) | Shared vitest helpers — `fileExists`, `readFile`, `readJson`, `expectBuildSucceeds`, `withTempDir`, `withTempFile` |
+| `@100xsystems/test-suite-java` | ✅ Published (GitHub Packages) | Shared JUnit 5 helpers — `BaseTest`, `FileHelper`, `BuildHelper`, `withTempDir`, `withTempFile` |
+
+### 1.4 GitHub Organization (`github.com/100xsystems`)
+
+| Repository | Status | Purpose |
+|------------|--------|---------|
+| `registry` | ✅ Live | Tiny JSON index of all available system repos |
+| `cli` | ✅ Live | The 100xSystems CLI tool |
+| `website` | ✅ (monorepo) | 100xsystems.dev website |
+| `claude-code` | ✅ Live | System curriculum: Claude Code (TypeScript + Java tracks) |
+| `system-template` | ✅ Live | Template for creating new system repos |
+| `test-suite-typescript` | ✅ Live | Shared TypeScript test helpers (npm) |
+| `test-suite-java` | ✅ Live | Shared Java test helpers (GitHub Packages) |
+| `docs` | ✅ Live | Organization documentation |
+
+### 1.5 Website (`100xsystems.dev`)
+
+| Page | Status | Details |
+|------|--------|---------|
+| Homepage | ✅ Done | 10-section landing page with animations |
+| Systems listing | ✅ Done | Lists all systems from curriculum |
+| System detail | ✅ Done | Track/module/lesson hierarchy with CLI Quick Start |
+| Lesson reader | ✅ Done | Markdown reading with outline, font controls, settings |
+| CLI Docs | ✅ Done | Full CLI documentation from markdown files |
+| Community | ⚠️ Mock data | Submission listings + leaderboard (falls back to mock) |
+| Search | ✅ Done | Tag-based curated resource search |
+| Knowledge Base | ✅ Done | Principles, Patterns, Tools, Technologies pages |
+| Certificate verification | ✅ Done | Verifiable certificate pages |
+| Languages | ⚠️ Coming Soon | Page exists, content coming |
+| Templates / Specs | ⚠️ Routes exist | Pages need content |
+
+### 1.6 Curriculum Structure
+
 ```
-The CLI sends the review package + criteria to an LLM and gets structured feedback.
-
-### 9. Certificate Verification Pages
-
-**What:** After the GitHub Actions workflow generates a certificate HTML, link to it from the website. Add a `/verify/[cert-id]` page.
-
-**Why:** Certificates are only meaningful if they're verifiable. A public verification URL proves authenticity.
-
-**Implementation:** The workflow already generates HTML. The website just needs a route that reads from the submissions repo's `docs/certificates/`.
-
-### 10. CLI Command: `100x learn` — Daily Guided Path
-
-**What:** Shows the next uncompleted lesson across all systems, with estimated time and difficulty.
-
-**Why:** Reduces "what should I do next?" friction. Keeps learners engaged.
-
-**Implementation:** Combine progress tracking + curriculum reading. Already have both pieces.
-
-### 11. Homepage — "Continue Learning" Section
-
-**What:** Show recently accessed systems and next lesson when a GitHub-authenticated user visits.
-
-**Why:** Reduces friction. "Welcome back, finish Lesson 4 of Claude Code."
-
-**Implementation:** Store last-read lesson in local storage. Display on homepage.
-
----
-
-## P3 — DIFFERENTIATION (Unique Value)
-
-### 12. Multi-Language Lesson Comparison
-
-**What:** For systems with multiple tracks, show a side-by-side lesson comparison.
-
-**Why:** Unique value proposition — "See how the same system is built in Java vs TypeScript."
-
-**Implementation:** When viewing a lesson, if the same module exists in another track, show a toggle/link.
-
-### 13. Engineering Decision Log Generator
-
-**What:** After completing a system, the CLI generates an Engineering Decision Log from git history + lesson criteria.
-
-**Why:** The architecture doc identifies this as the core "proof of engineering thinking."
-
-**Implementation:** Parse git log for decision-related commits, combine with lesson criteria, generate `design/decisions.md`.
-
-### 14. Interactive Architecture Diagrams
-
-**What:** Replace static text diagrams with interactive Mermaid/D2 diagrams that respond to hover/click.
-
-**Why:** Systems architecture is visual. Static ASCII diagrams are insufficient for complex topologies.
-
-**Implementation:** Use `mermaid` library in the website's markdown renderer. Add a custom MDX component.
-
-### 15. Docker-in-CLI Sandboxed Validators
-
-**What:** For lessons that build Docker images, run containers, or need isolated testing, executors should spin up Docker containers.
-
-**Why:** Some validators (build, test, deploy) need isolation. The `docker` executor exists but runs on the host.
-
-**Implementation:** The docker executor should create ephemeral containers for testing, not run commands on the host.
-
-### 16. "Build in Public" Mode
-
-**What:** Optionally publish progress/build logs to a public GitHub Gist or issue.
-
-**Why:** Builds personal brand for learners. "I'm building Claude Code live — follow my progress."
-
-**Implementation:** After each `100x validate` or `100x submit`, push a progress update to a gist.
-
----
-
-## P4 — EXPANSION (Scale)
-
-### 17. Mobile Apps (iOS + Android)
-
-**What:** React Native / Flutter apps consuming the same curriculum.
-
-**Why:** The architecture is content-centric. Any client can read the curriculum.
-
-**Implementation:** Create shared API layer or use the existing file system structure. Mobile apps read from curriculum repo directly.
-
-### 18. Curriculum Contribution Workflow
-
-**What:** Streamlined process for community members to contribute new systems, tracks, modules, or lessons.
-
-**Why:** Growth depends on content. Open-source contributions scale content creation.
-
-**Implementation:**
-```
-100x contribute init {system}
-→ Creates lesson template with frontmatter
-→ Generates validator stubs
-→ Opens PR to 100xsystems/curriculum
+curriculum/
+├── cli-docs/          # CLI documentation markdown files
+├── knowledge-base/    # Principles, Patterns, Tools, Technologies
+├── search/            # Tag-based resource JSON files
+└── systems/           # System curriculum (one folder per system)
+    └── [slug]/
+        ├── index.md   # System metadata with track definitions
+        └── track-{lang}/
+            └── module-{n}/
+                ├── lesson.md
+                ├── quiz.md
+                ├── challenge.md
+                └── tests/
+                    └── behavior.test.ts (or LessonTest.java)
 ```
 
-### 19. Analytics Dashboard (Privacy-First)
+---
 
-**What:** Show system popularity, completion rates, and common failure points.
+## 2. Architecture Overview
 
-**Why:** Data-driven curriculum improvements. Identify which lessons need better content.
+### 2.1 System Discovery Flow
 
-**Implementation:** Anonymous opt-in analytics. No PII. Track: lesson viewed, quiz score, submit attempt.
+```
+CLI startup
+    │
+    ├─► Check ~/.cache/100xsystems/repos/ for cached system repos
+    │
+    ├─► Fetch registry.json from github.com/100xsystems/registry
+    │       └─ Contains: { slug, repo, version } for each system
+    │
+    └─► Shallow-clone missing repos into cache
+            └─► System repo contains: curriculum/, tests/, docker/
+```
 
-### 20. System Dependencies Graph
+### 2.2 Validation Flow
 
-**What:** Visual graph showing prerequisite chains between systems and knowledge base entries.
+```
+100xsystems validate
+    │
+    ├─► L1: Project Structure
+    │       ├─  100xsystems.json valid?
+    │       ├─  README.md exists?
+    │       ├─  package.json / pom.xml exists?
+    │       ├─  src/ directory exists?
+    │       └─  .git initialized?
+    │
+    ├─► L1.5: Frontmatter Validation
+    │       ├─  Required keys present? (title, description)
+    │       ├─  Validator types recognized?
+    │       ├─  Duplicate keys detected?
+    │       └─  YAML well-formed?
+    │
+    ├─► L2: Lesson Validators (Executor-based)
+    │       ├─  file-exists, file-contains, cli-command
+    │       ├─  test-runner (vitest for TS, JUnit for Java)
+    │       │       ├─  Copy source to temp dir
+    │       │       ├─  Inject test-suite dependency
+    │       │       ├─  Run tests (npx vitest / mvn test)
+    │       │       └─  Parse results (JSON / XML reports)
+    │       └─  docker, http, npm-test
+    │
+    └─► L3: Spec-Defined Checks
+            └─  From SPECIFICATION.md in curriculum
+```
 
-**Why:** "You need to understand CAP Theorem before tackling Microservices." Visual learning paths reduce confusion.
+### 2.3 Submission Flow
 
-**Implementation:** Parse `prerequisites` and `knowledge_refs` from all lessons. Build a dependency graph. Render with D3.js.
+```
+100xsystems submit
+    │
+    ├─► 1. Run validation (all levels)
+    ├─► 2. Confirm with user
+    ├─► 3. Authenticate via GitHub OAuth
+    ├─► 4. Collect metadata
+    ├─► 5. Build and package
+    └─► 6. Create PR to 100xsystems/submissions
+```
 
 ---
 
-## P5 — NICE-TO-HAVE (Polish + Delight)
+## 3. Website Audit
 
-### 21. CLI Themes & Customization
+### 3.1 Pages & Routes
 
-**What:** Custom colors, fonts, and layouts for the Ink-based CLI.
+| Route | Status | Notes |
+|-------|--------|-------|
+| `/` | ✅ Live | 10-section homepage with hero, philosophy, cubix, etc. |
+| `/systems` | ✅ Live | Lists all systems from curriculum |
+| `/systems/[slug]` | ✅ Live | System detail with tracks, modules, lessons + CLI Quick Start |
+| `/systems/[slug]/read/[...path]` | ✅ Live | Full reading experience — markdown, outline, settings |
+| `/cli-docs` | ✅ Live | CLI documentation index with installation guide |
+| `/cli-docs/[slug]` | ✅ Live | Individual CLI command docs |
+| `/community` | ⚠️ Live | Submissions + leaderboard (mock data fallback) |
+| `/search` | ✅ Live | Tag-based resource search |
+| `/principles` | ✅ Live | Knowledge base — principles domain |
+| `/patterns` | ✅ Live | Knowledge base — patterns domain |
+| `/tools` | ✅ Live | Knowledge base — tools domain |
+| `/technologies` | ✅ Live | Knowledge base — technologies domain |
+| `/languages` | ⚠️ Coming Soon | Languages coming soon |
+| `/verify/[certId]` | ✅ Live | Certificate verification page |
+| `/systems/[slug]/templates` | ⚠️ Empty | Route exists, no content |
+| `/systems/[slug]/specifications` | ⚠️ Empty | Route exists, no content |
 
-### 22. Achievement Badges (in GitHub Profile)
+### 3.2 Critical Gaps
 
-**What:** After completing a system, add a badge to the user's GitHub profile README via GitHub Actions.
+| Gap | Severity | Why It Matters |
+|-----|----------|----------------|
+| **No dashboard/progress page** | 🔴 High | Users have no way to track what they've completed across systems |
+| **No dark mode** | 🟡 Medium | 70% of devs prefer dark mode. Only light and sepia exist on reading pages |
+| **Community data is mock** | 🟡 Medium | Falls back to mock because `GITHUB_TOKEN` env var isn't configured in prod |
+| **No keyboard navigation** | 🟡 Medium | No `j`/`k` for prev/next lesson, no `/` for search |
+| **No way to init from website** | 🟡 Medium | User reads about a system, has to manually open CLI — no "Get Started" flow |
+| **No loading states** | 🟡 Medium | Community/search fetch data client-side with no skeleton states |
+| **Languages page is dead** | 🟡 Medium | `getAllLanguages()` returns empty — no `languages/` dir in curriculum |
 
-### 23. "Explain This System" — AI Summary
+### 3.3 UX Issues
 
-**What:** One-command AI-generated summary of any system: `100x explain microservices`
+| Issue | Severity | Suggestion |
+|-------|----------|------------|
+| Homepage is heavy (10 sections + GSAP + motion) | 🟡 Medium | Lazy-load below-fold sections |
+| No table of contents on mobile | 🟡 Medium | Lesson outline only shows on `xl:` screens |
+| No error boundaries | 🟡 Medium | If a page throws, user sees white screen |
+| Search page doesn't search curriculum | 🟡 Medium | Only searches tag-based resources, not lesson content |
+| No reading time estimates | 🟢 Low | Lessons show `estimated_time` in frontmatter but website doesn't display it |
+| Mobile lesson navigation cramped | 🟢 Low | MobileNav has settings/copy/fullscreen but no prev/next lesson |
 
-### 24. Offline Mode
+### 3.4 Technical Concerns
 
-**What:** Full CLI functionality without internet (except LLM calls). Curriculum is local.
-
-### 25. Import/Export Progress
-
-**What:** Share progress between machines. `100x progress export` → JSON file.
+| Concern | Why |
+|---------|-----|
+| GSAP ScrollSmoother may conflict with Next.js navigation | Wrapper gets destroyed/recreated on every route change |
+| Large client bundles | `motion/react` + `gsap` + `highlight.js` on every page |
+| Curriculum path hardcoded | `CURRICULUM_ROOT = path.join(process.cwd(), '..', 'curriculum')` only works in monorepo |
 
 ---
 
-## ARCHITECTURAL CONSTRAINTS SUMMARY
+## 4. What's Next — Roadmap
 
-| Constraint | Why |
-|------------|-----|
-| No traditional backend | Cost, maintenance, scaling |
-| GitHub is the database | PRs, reviews, metadata all on GitHub |
-| Curriculum is the single source of truth | CLI and website read the same files |
-| No JSON metadata files | Everything in frontmatter — rename-safe |
-| Executor plugins, not system-specific logic | CLI never needs to know about specific systems |
-| Static site generation | Website rebuilds on curriculum changes |
-| Certificates are static HTML | GitHub Actions generates, GitHub Pages serves |
+### 🔴 Phase 1: Foundation (High Priority)
+
+- [ ] **Progress/Dashboard page** — Read `~/.100x/progress.json` and render as a user dashboard
+- [ ] **Dark mode** — Extend reading context theme system to full site
+- [ ] **Get Started CTA** — "Build this system" button on every system page that copies install + init commands
+- [ ] **Connect community to real data** — Configure `GITHUB_TOKEN` in deployment
+- [ ] **Keyboard navigation** — `j`/`k` for prev/next lesson, `/` for search focus
+
+### 🟡 Phase 2: Content & Polish (Medium Priority)
+
+- [ ] **Language track comparison on system detail pages** — "Also available in Java / TypeScript"
+- [ ] **Render lesson validation blocks as interactive checklists** on reading pages
+- [ ] **Add loading/skeleton states** to community page and search page
+- [ ] **Add error boundaries** to each route group
+- [ ] **Add reading time estimates** to lesson cards on system detail page
+- [ ] **Mobile lesson outline** — Collapsible outline on mobile reading pages
+
+### 🟢 Phase 3: Growth (Lower Priority)
+
+- [ ] **Blog page** — Footer links to it, doesn't exist yet
+- [ ] **Custom 404 page**
+- [ ] **RSS feed** for knowledge base articles
+- [ ] **Print-friendly CSS** for lesson reading
+- [ ] **Social sharing** for certificates
+- [ ] **Search curriculum content** — Full-text search across all lessons
+- [ ] **Recommended learning paths** — "Start with Claude Code, then move to Microservices"
+
+### 🏗️ Infrastructure
+
+- [ ] **Configure ISR** for content pages (revalidate on content update)
+- [ ] **Dynamic imports** for GSAP and motion/react on pages that don't need them
+- [ ] **Fix curriculum path resolution** — Support both monorepo and deployed (registry-cloned) layouts
+- [ ] **Set up GITHUB_TOKEN** in Vercel/Netlify env vars for community page
+- [ ] **Performance audit** — Lighthouse scores, bundle analysis, image optimization
+
+---
+
+## 5. Known Issues
+
+### CLI
+1. **Java track lessons don't have pom.xml or Java source files yet** — Only lesson markdowns exist. Students need to create their own Maven project.
+2. **`runJUnit()` hasn't been tested end-to-end** — Java helpers compile inline but no real Maven project has been validated against them.
+3. **`ensureMavenDependencies()` XML injection is string-based** — Could produce malformed XML if pom.xml has unusual formatting. Is reliable for standard pom.xml files.
+4. **No Maven dependency caching** — Unlike npm caching for TypeScript, Java track installs dependencies fresh every time.
+
+### Website
+1. **Curriculum path is hardcoded to monorepo layout** — Only works when website is run from within the monorepo.
+2. **Community page falls back to mock data** — Requires `GITHUB_TOKEN` env var for real data.
+3. **No dark mode outside reading pages** — Theme toggle only affects the article reading experience.
+4. **GSAP ScrollSmoother may conflict with Next.js App Router** — The smooth scrolling wrapper is created/destroyed on navigation, which can cause jank.
+
+### Test Suite
+1. **`@100xsystems/test-suite-java` needs `mvn deploy` to republish** — Changes to the package require a manual publish to GitHub Packages.
+2. **Java helpers are compiled inline by the CLI** — The `copyTestSuiteJavaHelpers()` method copies source files into the test tree. This works but doesn't match the GitHub Packages dependency pattern.
+
+---
+
+## 6. How to Contribute
+
+### Adding a New System
+1. Run `100xsystems contribute init` to scaffold the system
+2. Add tracks: `100xsystems contribute track`
+3. Add lessons: `100xsystems contribute lesson`
+4. Each lesson gets a `tests/` folder with boilerplate test file
+5. Push to a new repo at `github.com/100xsystems/{slug}`
+6. Update `registry.json` in the registry repo
+
+### Adding a Lesson
+1. Run `100xsystems contribute lesson` with system slug
+2. Edit the generated `lesson.md` with content
+3. Edit `tests/behavior.test.ts` (or `tests/LessonTest.java`) with behavioral tests
+
+### Modifying the CLI
+```bash
+cd migration/100xsystems/cli
+npm run build    # TypeScript compile + copy templates
+npm link         # Use globally for testing
+```
+
+### Running the Website
+```bash
+cd website
+npm run dev      # Local development on port 3000
+npm run build    # Static site generation
+```
+
+---
+
+*Generated: July 2026 — comprehensive audit of all 100xSystems components*
